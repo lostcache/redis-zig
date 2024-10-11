@@ -16,7 +16,11 @@ fn make_connection(server: *std.net.Server) !std.net.Server.Connection {
 }
 
 fn handle_client(conn: std.net.Server.Connection) !void {
-    try conn.stream.writeAll("+PONG\r\n");
+    const reader = conn.stream.reader();
+    var buffer: [1024]u8 = undefined;
+    while (try reader.read(&buffer) > 0) {
+        try conn.stream.writeAll("+PONG\r\n");
+    }
 }
 
 pub fn main() !void {
