@@ -1,23 +1,34 @@
 const std = @import("std");
 const net = std.net;
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+fn into_address(ip: []const u8, port: u16) !net.Address {
+    return try net.Address.resolveIp(ip, port);
+}
 
-    try stdout.print("Logs from your program will appear here!", .{});
-
-    const address = try net.Address.resolveIp("127.0.0.1", 6379);
-
-    var listener = try address.listen(.{
+fn get_server(addr: std.net.Address) !std.net.Server {
+    return try addr.listen(.{
         .reuse_address = true,
     });
+}
 
-    defer listener.deinit();
+fn make_connection(server: *std.net.Server) !std.net.Server.Connection {
+    return try server.accept();
+}
+
+fn handle_client(conn: std.net.Server.Connection) !void {
+    try conn.stream.writeAll("+PONG\r\n");
+}
+
+pub fn main() !void {
+    const address = try into_address("127.0.0.1", 6379);
+
+    var server = try get_server(address);
+    defer server.deinit();
 
     while (true) {
-        const connection = try listener.accept();
+        const connection = try make_connection(&server);
+        defer connection.stream.close();
 
-        try stdout.print("accepted new connection", .{});
-        connection.stream.close();
+        try handle_client(connection);
     }
 }
