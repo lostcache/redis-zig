@@ -16,6 +16,8 @@ fn make_connection(server: *std.net.Server) !std.net.Server.Connection {
 }
 
 fn handle_client(conn: std.net.Server.Connection) !void {
+    defer conn.stream.close();
+
     const reader = conn.stream.reader();
     var buffer: [1024]u8 = undefined;
     while (try reader.read(&buffer) > 0) {
@@ -31,8 +33,8 @@ pub fn main() !void {
 
     while (true) {
         const connection = try make_connection(&server);
-        defer connection.stream.close();
 
-        try handle_client(connection);
+        const thread = try std.Thread.spawn(.{}, handle_client, .{connection});
+        thread.detach();
     }
 }
