@@ -1,0 +1,68 @@
+const std = @import("std");
+const net = std.net;
+const mem = std.mem;
+
+fn into_address(ip: []const u8, port: u16) !net.Address {
+    return try net.Address.resolveIp(ip, port);
+}
+
+fn get_server(addr: net.Address) !net.Server {
+    return try addr.listen(.{
+        .reuse_address = true,
+    });
+}
+
+fn make_connection(server: *net.Server) !net.Server.Connection {
+    return try server.accept();
+}
+
+fn tokenize_request(buffer: *[1024]u8) mem.TokenIterator(u8, .any) {
+    return mem.tokenize(u8, buffer, "\r\n");
+}
+
+fn handle_response(token_iterator: *mem.TokenIterator(u8, .any), token: ?[]const u8) []const u8 {
+    std.debug.print("Token: {s}\n", .{token});
+    if (std.ascii.eqlIgnoreCase(token, "PING")) {
+        return "+PONG\r\n";
+    } else if (std.ascii.eqlIgnoreCase(token, "ECHO")) {
+        const res = token_iterator.next();
+        std.debug.print("Echo: {any}\n", .{res});
+        return res orelse "-ERROR\r\n";
+    } else {
+        return "-ERROR\r\n";
+    }
+}
+
+fn handle_request(conn: net.Server.Connection, buffer: *[1024]u8) !void {
+    var tokens = tokenize_request(buffer);
+    _ = tokens.next();
+    const token = tokens.next();
+    while (token) {
+        const res = handle_response(&tokens, token);
+        _ = try conn.stream.write(res);
+    }
+}
+
+fn handle_client(conn: net.Server.Connection) !void {
+    defer conn.stream.close();
+
+    const reader = conn.stream.reader();
+    var buffer: [1024]u8 = undefined;
+    while (try reader.read(&buffer) > 0) {
+        try handle_request(conn, &buffer);
+    }
+}
+
+pub fn main() !void {
+    const address = try into_address("127.0.0.1", 6379);
+
+    var server = try get_server(address);
+    defer server.deinit();
+
+    while (true) {
+        const connection = try make_connection(&server);
+
+        const thread = try std.Thread.spawn(.{}, handle_client, .{connection});
+        thread.detach();
+    }
+}
